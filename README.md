@@ -1,8 +1,6 @@
 # 🔄 Exchanger (exchangertool)
 
 [![PyPI version](https://img.shields.io/pypi/v/exchangertool.svg)](https://pypi.org/project/exchangertool/)
-[![Python versions](https://img.shields.io/pypi/pyversions/exchangertool.svg)](https://pypi.org/project/exchangertool/)
-[![GitHub Repo stars](https://img.shields.io/github/stars/didntchooseaname/exchanger?style=social)](https://github.com/didntchooseaname/exchanger)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Exchanger** is a fast, lightweight, and flexible Python Command Line Interface (CLI) utility designed to streamline file transfers, payload delivery, and data exchange between machines.
