@@ -5,7 +5,7 @@ Serve files or listen to receive (target POSTs file to host). Default port 8080.
 ## Installation
 
 ```bash
-pipx install exchanger
+pipx install exchangertool
 ```
 
 ## Usage
