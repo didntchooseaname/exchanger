@@ -9,7 +9,7 @@ description = "Minimal CLI to send or receive files over HTTP or SMB."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-dependencies = ["smbprotocol"]
+dependencies = ["smbprotocol", "tqdm"]
 
 [project.scripts]
 exchanger = "exchanger.cli:main"

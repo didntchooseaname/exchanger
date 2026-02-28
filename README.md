@@ -24,6 +24,26 @@ The recommended way to install `exchangertool` is using [`pipx`](https://pypa.gi
 pipx install exchangertool
 ```
 
+### Using with sudo
+
+`pipx` installs the tool in your user directory (e.g. `~/.local/bin`). When you run `sudo exchanger`, the root user does not see that path, so the command may not be found or may run a different binary.
+
+**Options:**
+
+- **Use the full path** so root runs your installed binary:
+  ```bash
+  sudo "$(which exchanger)" serve --port 80
+  ```
+- **Install system-wide** when you need to run as root often:
+  ```bash
+  sudo pip install exchangertool
+  ```
+- **Bind to port 80 without sudo** (Linux) by giving the binary permission to bind to low ports:
+  ```bash
+  sudo setcap 'cap_net_bind_service=+ep' "$(which exchanger)"
+  ```
+  Then run `exchanger serve --port 80` as your normal user.
+
 ## 🚀 Usage
 
 Once installed, you can trigger the tool directly from your command line.

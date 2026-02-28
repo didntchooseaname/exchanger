@@ -4,14 +4,17 @@ import http.server
 import mimetypes
 import os
 import threading
-import time
 import urllib.parse
 import urllib.request
 import ssl
 import sys
+from tqdm import tqdm
 
 _SPINNER = (".", "\\", "/", "-")
 _SPINNER_INTERVAL = 0.12
+_PROGRESS_LOCK = threading.Lock()
+_CHUNK = 65536
+_MIN_SIZE_FOR_PROGRESS = 65536  # only show bar for transfers >= 64KiB
 
 
 def _spinner_loop(stop: threading.Event) -> None:
@@ -23,6 +26,32 @@ def _spinner_loop(stop: threading.Event) -> None:
         stop.wait(_SPINNER_INTERVAL)
     sys.stderr.write("\r   \r")
     sys.stderr.flush()
+
+
+def _read_with_progress(rfile, length: int, name: str) -> bytes:
+    """Read length bytes from rfile in chunks; show progress bar for large transfers."""
+    show_bar = length >= _MIN_SIZE_FOR_PROGRESS and sys.stderr.isatty()
+    chunks = []
+    remaining = length
+    with _PROGRESS_LOCK:
+        with tqdm(
+            total=length,
+            desc=name[:20],
+            unit="B",
+            unit_scale=True,
+            file=sys.stderr,
+            mininterval=0.1,
+            disable=not show_bar,
+        ) as pbar:
+            while remaining > 0:
+                chunk_size = min(_CHUNK, remaining)
+                chunk = rfile.read(chunk_size)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+                pbar.update(len(chunk))
+    return b"".join(chunks)
 
 
 def _safe_join(base: str, path: str) -> str | None:
@@ -66,8 +95,25 @@ class ExchangeHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-type", ctype)
         self.send_header("Content-Length", str(size))
         self.end_headers()
-        with open(local, "rb") as f:
-            self.wfile.write(f.read())
+        name = os.path.basename(local)
+        show_bar = size >= _MIN_SIZE_FOR_PROGRESS and sys.stderr.isatty()
+        with _PROGRESS_LOCK:
+            with open(local, "rb") as f:
+                with tqdm(
+                    total=size,
+                    desc=name[:20],
+                    unit="B",
+                    unit_scale=True,
+                    file=sys.stderr,
+                    mininterval=0.1,
+                    disable=not show_bar,
+                ) as pbar:
+                    while True:
+                        chunk = f.read(_CHUNK)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        pbar.update(len(chunk))
 
     def do_POST(self):
         path = urllib.parse.unquote(self.path)
@@ -106,7 +152,7 @@ class ExchangeHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             if not boundary:
                 self.send_error(400, "Missing boundary")
                 return
-            data = self.rfile.read(length)
+            data = _read_with_progress(self.rfile, length, "upload")
             try:
                 body = _parse_multipart(data, boundary)
             except ValueError:
@@ -121,7 +167,7 @@ class ExchangeHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(out_path):
                 out_path = os.path.join(out_path, "upload")
         else:
-            payload = self.rfile.read(length)
+            payload = _read_with_progress(self.rfile, length, "upload")
             if path == "/" or path == "" or (local and os.path.isdir(local)):
                 x_fn = self.headers.get("X-Filename", "").strip()
                 if x_fn:
