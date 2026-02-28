@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exchanger"
+version = "0.1.0"
+description = "Minimal CLI to send or receive files over HTTP or SMB."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["smbprotocol"]
+
+[project.scripts]
+exchanger = "exchanger.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["exchanger*"]
