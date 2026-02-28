@@ -18,14 +18,14 @@ ___________             .__
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="exchanger",
-        description=_BANNER + "\nServe files or listen to receive (target POSTs to host). Default port 8080.",
+        description=_BANNER + "\nServe files or listen to receive (target POSTs to host). Default port 80.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
   %(prog)s                    (same as serve)
   %(prog)s serve              (target can GET or POST)
   %(prog)s receive            (host listens; target POSTs file to you)
-  %(prog)s receive --dir /tmp --port 8080
+  %(prog)s receive --dir /tmp --port 80
         """,
     )
     def add_protocol_port(sp):
@@ -38,8 +38,8 @@ examples:
         sp.add_argument(
             "-p", "--port",
             type=int,
-            default=8080,
-            help="port (default: 8080)",
+            default=80,
+            help="port (default: 80)",
         )
 
     sub = parser.add_subparsers(dest="command", help="command (default: serve)")
