@@ -10,13 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/exchanger  # Change this if your PyPI package name is different
-    
-    # CRUCIAL: This permission allows GitHub to authenticate with PyPI
+      url: https://pypi.org/p/exchangertool
+
     permissions:
-      id-token: write  
+      id-token: write
       contents: read
-      
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
