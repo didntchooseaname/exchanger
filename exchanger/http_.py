@@ -97,6 +97,8 @@ class ExchangeHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         name = os.path.basename(local)
         show_bar = size >= _MIN_SIZE_FOR_PROGRESS and sys.stderr.isatty()
+        request_path_normalized = path.strip("/") or path
+        serve_path = getattr(self.server, "serve_path", None)
         with _PROGRESS_LOCK:
             with open(local, "rb") as f:
                 with tqdm(
@@ -114,6 +116,8 @@ class ExchangeHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                             break
                         self.wfile.write(chunk)
                         pbar.update(len(chunk))
+        if serve_path is not None and request_path_normalized == serve_path:
+            self.server.shutdown()
 
     def do_POST(self):
         path = urllib.parse.unquote(self.path)
@@ -229,6 +233,7 @@ def serve_http(args, receive_only: bool = False):
         sys.exit(f"exchanger: not a directory: {args.dir}")
     handler = lambda *a, **k: ExchangeHTTPRequestHandler(*a, directory=dir_abs, **k)
     server = http.server.HTTPServer((args.bind, args.port), handler)
+    server.serve_path = None
     if args.port == 443:
         try:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -242,13 +247,29 @@ def serve_http(args, receive_only: bool = False):
             print("exchanger: use --port 8443 for plain HTTP or provide certs.", file=sys.stderr)
             sys.exit(1)
     if receive_only:
-        print(f"exchanger: listening to receive (target POSTs to you) on {args.bind}:{args.port}")
-        from .net_ import print_commands_receive_listen
+        from .net_ import BOLD, GREEN, RESET, print_commands_receive_listen
+        if sys.stderr.isatty():
+            print(f"{GREEN}{BOLD}🔄 exchanger: listening to receive (target POSTs to you) on {args.bind}:{args.port}{RESET}", file=sys.stderr)
+        else:
+            print(f"exchanger: listening to receive (target POSTs to you) on {args.bind}:{args.port}", file=sys.stderr)
         print_commands_receive_listen(args.port, getattr(args, "protocol", "http"))
     else:
-        print(f"exchanger: serving {dir_abs} on {args.bind}:{args.port} (protocol http)")
-        from .net_ import print_commands_serve
-        print_commands_serve(args.port, getattr(args, "protocol", "http"))
+        from .net_ import BOLD, GREEN, RESET, get_serve_base, print_commands_serve, pick_file_to_serve
+        if sys.stderr.isatty():
+            print(f"{GREEN}{BOLD}🔄 exchanger: serving {dir_abs} on {args.bind}:{args.port} (http){RESET}", file=sys.stderr)
+        else:
+            print(f"exchanger: serving {dir_abs} on {args.bind}:{args.port} (protocol http)", file=sys.stderr)
+        base, platform = get_serve_base(args.port, getattr(args, "protocol", "http"))
+        serve_path = pick_file_to_serve(dir_abs)
+        if base is not None:
+            print_commands_serve(
+                args.port,
+                getattr(args, "protocol", "http"),
+                serve_path=serve_path,
+                _base=base,
+                _platform=platform,
+            )
+        server.serve_path = serve_path
     stop = threading.Event()
     spinner = threading.Thread(target=_spinner_loop, args=(stop,), daemon=True)
     spinner.start()
