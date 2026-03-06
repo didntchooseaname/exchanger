@@ -77,8 +77,14 @@ def test_obfuscate_bash_multiple_calls_produce_runnable_variants():
 def test_obfuscate_powershell_iex_obfuscated():
     cmd = "iex (Get-Content x)"
     out = obfuscate_powershell(cmd)
-    # iex is obfuscated (quote interruption or random case)
-    assert "iex" in out.lower() or "i''ex" in out or "i\"\"ex" in out
+    # iex is obfuscated (quote interruption at any position or random case)
+    assert (
+        "iex" in out.lower()
+        or "i''ex" in out
+        or "ie''x" in out
+        or 'i""ex' in out
+        or 'ie""x' in out
+    )
 
 
 def test_obfuscate_powershell_certutil_bitsadmin_case():
