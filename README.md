@@ -1,6 +1,7 @@
 # 🔄 Exchanger (exchangertool)
 
 [![PyPI version](https://img.shields.io/pypi/v/exchangertool.svg)](https://pypi.org/project/exchangertool/)
+[![CI](https://github.com/didntchooseaname/exchanger/actions/workflows/ci.yml/badge.svg)](https://github.com/didntchooseaname/exchanger/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Exchanger** is a fast, lightweight, and flexible Python Command Line Interface (CLI) utility designed to streamline file transfers, payload delivery, and data exchange between machines.
@@ -10,7 +11,8 @@ Whether you are a system administrator moving files or a security professional l
 ## ✨ Features
 
 * **Quick Setup:** Spin up a file exchange server in seconds.
-* **Cross-Platform Target Support:** Easily serves files to Windows (`certutil`, `curl`, `PowerShell`, `iwr`, `bitsadmin`) and Linux (`wget`, `curl`, `bash`) targets.
+* **Cross-Platform Target Support:** Easily serves files to Windows (`certutil`, `curl`, `PowerShell`, `iwr`, `bitsadmin`) and GNU/Linux (`wget`, `curl`, `bash`) targets.
+* **Optional obfuscation (`-o`):** Output only obfuscated receive and in-memory commands (PowerShell-Obfuscation-Bible–style for Windows, Bashfuscator-style for GNU/Linux) to stdout for authorized testing.
 * **Standalone CLI:** Runs smoothly from any terminal.
 * **Isolated Installation:** Perfectly compatible with `pipx` to avoid polluting your system Python environment.
 
@@ -36,7 +38,7 @@ pipx install exchangertool
   ```bash
   sudo pip install exchangertool
   ```
-- **Bind to port 80 without sudo** (Linux) by giving the binary permission to bind to low ports:
+- **Bind to port 80 without sudo** (GNU/Linux) by giving the binary permission to bind to low ports:
   ```bash
   sudo setcap 'cap_net_bind_service=+ep' "$(which exchanger)"
   ```
@@ -71,13 +73,28 @@ positional arguments:
 
 options:
   -h, --help       show this help message and exit
+  -o, --obfuscate  (serve/receive) output only obfuscated commands to stdout
 
 examples:
   exchanger                    (same as serve)
   exchanger serve              (target can GET or POST)
+  exchanger serve -o           obfuscated one-liners to stdout (redirect to file/clipboard)
   exchanger receive            (host listens; target POSTs file to you)
   exchanger receive --dir /tmp --port 80
 ```
+
+## 🧪 Testing
+
+CI runs the test suite on every push and pull request to `main`/`master`, and can be triggered manually (Actions → CI → Run workflow).
+
+To run locally:
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+```
+
+Optional: coverage report with `pytest tests/ --cov=exchanger --cov-report=term-missing`.
 
 ## 🤝 Contributing
 

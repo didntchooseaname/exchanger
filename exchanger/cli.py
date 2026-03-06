@@ -59,6 +59,11 @@ examples:
         metavar="ADDR",
         help="address to bind (default: 0.0.0.0)",
     )
+    serve_p.add_argument(
+        "-o", "--obfuscate",
+        action="store_true",
+        help="output only obfuscated commands (receive on disk + in-memory) to stdout",
+    )
     serve_p.set_defaults(func=_cmd_serve)
 
     # receive (host listens; target POSTs to host)
@@ -75,6 +80,11 @@ examples:
         default="0.0.0.0",
         metavar="ADDR",
         help="address to bind (default: 0.0.0.0)",
+    )
+    recv_p.add_argument(
+        "-o", "--obfuscate",
+        action="store_true",
+        help="output only obfuscated commands to stdout",
     )
     recv_p.set_defaults(func=_cmd_receive)
 

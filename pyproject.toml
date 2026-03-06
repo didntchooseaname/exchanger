@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exchangertool"
-version = "0.1.3"
+version = "0.2.1"
 description = "Minimal CLI to send or receive files over HTTP or SMB."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 dependencies = ["smbprotocol", "tqdm"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov"]
 
 [project.scripts]
 exchanger = "exchanger.cli:main"
@@ -17,3 +20,7 @@ exchanger = "exchanger.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["exchanger*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

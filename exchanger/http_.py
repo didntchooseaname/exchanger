@@ -227,10 +227,10 @@ def _parse_multipart(data: bytes, boundary: bytes) -> dict:
 
 
 def serve_http(args, receive_only: bool = False):
-    os.chdir(args.dir)
     dir_abs = os.path.abspath(args.dir)
     if not os.path.isdir(dir_abs):
         sys.exit(f"exchanger: not a directory: {args.dir}")
+    os.chdir(args.dir)
     handler = lambda *a, **k: ExchangeHTTPRequestHandler(*a, directory=dir_abs, **k)
     server = http.server.HTTPServer((args.bind, args.port), handler)
     server.serve_path = None
@@ -252,7 +252,11 @@ def serve_http(args, receive_only: bool = False):
             print(f"{GREEN}{BOLD}🔄 exchanger: listening to receive (target POSTs to you) on {args.bind}:{args.port}{RESET}", file=sys.stderr)
         else:
             print(f"exchanger: listening to receive (target POSTs to you) on {args.bind}:{args.port}", file=sys.stderr)
-        print_commands_receive_listen(args.port, getattr(args, "protocol", "http"))
+        print_commands_receive_listen(
+            args.port,
+            getattr(args, "protocol", "http"),
+            obfuscate=getattr(args, "obfuscate", False),
+        )
     else:
         from .net_ import BOLD, GREEN, RESET, get_serve_base, print_commands_serve, pick_file_to_serve
         if sys.stderr.isatty():
@@ -268,6 +272,7 @@ def serve_http(args, receive_only: bool = False):
                 serve_path=serve_path,
                 _base=base,
                 _platform=platform,
+                obfuscate=getattr(args, "obfuscate", False),
             )
         server.serve_path = serve_path
     stop = threading.Event()

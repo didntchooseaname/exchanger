@@ -10,3 +10,5 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+.cursor/rules/snyk_rules.mdc
+.vscode/
